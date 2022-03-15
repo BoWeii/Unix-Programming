@@ -7,138 +7,259 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <sys/stat.h>
+#include <fstream>
+#include <vector>
+#include <sstream>
+#include <algorithm>
 
 using namespace std;
 
+#define NO_NODE "NO_NODE"
 #define BUF_MAX 1024
 #define CMD_DISPLAY_MAX (90 + 1)
 #define USER_DISPLAY_MAX (100 + 1)
 
-typedef struct pid_info_t {
+typedef struct pid_info_t
+{
+    string cmd;
     pid_t pid;
     string user;
-    string cmd;
+    string fd;
+    string _type;
+    string inode;
     char path[PATH_MAX];
-    ssize_t parent_length;
+
 } pid_info_t;
 
-string get_username(uid_t uid)
+void print_header()
+{
+    printf("%-9s %5s %10s %4s %9s %10s %s\n",
+           "COMMAND",
+           "PID",
+           "USER",
+           "FD",
+           "TYPE",
+           "NODE",
+           "NAME");
+}
+
+void get_username_byPid(pid_info_t &info, uid_t uid)
 {
     struct passwd *pws;
     pws = getpwuid(uid);
-    if(pws){
-        return pws->pw_name;
-    }else{
-        return "???";
+    if (pws)
+    {
+        info.user = pws->pw_name;
+    }
+    else
+    {
+        info.user = "???";
     }
 }
-string get_process_name_by_pid(const int pid)
+void get_command_byPid(pid_info_t &info, const int pid)
 {
-    char* name = (char*)calloc(1024,sizeof(char));
-    if(name){
-        sprintf(name, "/proc/%d/comm",pid);
-        FILE* f = fopen(name,"r");
-        if(f){
+    char *name = (char *)calloc(1024, sizeof(char));
+    if (name)
+    {
+        sprintf(name, "/proc/%d/comm", pid);
+        FILE *f = fopen(name, "r");
+        if (f)
+        {
             size_t size;
             size = fread(name, sizeof(char), 1024, f);
-            if(size>0){
-                if('\n'==name[size-1])
-                    name[size-1]='\0';
+            if (size > 0)
+            {
+                if ('\n' == name[size - 1])
+                    name[size - 1] = '\0';
             }
             fclose(f);
         }
     }
     string tmp(name);
     free(name);
-    return tmp;
+    info.cmd = tmp;
 }
 
+void get_file_type(pid_info_t &info, const char *file_path)
+{
+    struct stat _stat;
+    stat(file_path, &_stat);
+    switch (_stat.st_mode & S_IFMT)
+    {
+    case S_IFBLK:
+        info._type = "BLK"; // block device
+        break;
+    case S_IFCHR:
+        info._type = "CHR"; // character device
+        break;
+    case S_IFDIR:
+        info._type = "DIR"; // directory
+        break;
+    case S_IFIFO:
+        info._type = "FIFO"; // fifo/pipe
+        break;
+    case S_IFLNK:
+        info._type = "SYM"; // symbolink
+        break;
+    case S_IFREG:
+        info._type = "REG"; // regular file
+        break;
+    case S_IFSOCK:
+        info._type = "SOCK"; // socket
+        break;
+    default:
+        info._type = "unknown";
+        break;
+    }
+}
 
-
-void print_file(pid_info_t &info,string type){
+void print_byFd(pid_info_t info, string fd)
+{
     string name_path(info.path);
-
-    if(type=="cwd"){
-        name_path+="cwd";
+    struct stat _stat;
+    if (fd == "cwd")
+    {
+        name_path += "cwd";
     }
-    else if(type=="rtd"){
-        name_path+="root";
+    else if (fd == "rtd")
+    {
+        name_path += "root";
     }
-    else if(type=="txt"){
-        name_path+="exe";
+    else if (fd == "txt")
+    {
+        name_path += "exe";
     }
-    const char *symbolic_path=name_path.c_str();
-    char *actual_path= (char*)calloc(1024,sizeof(char));
-    if(readlink(symbolic_path,actual_path,1024)!=-1){
-        name_path="";
-        while(*actual_path){
-            name_path+=*actual_path;
-            actual_path++;
+    const char *symbolic_path = name_path.c_str();
+    char *actual_path = (char *)calloc(1024, sizeof(char));
+    if (readlink(symbolic_path, actual_path, 1024) != -1) // has permission
+    {
+        name_path = "";
+        char *copy = actual_path;
+        while (*copy)
+        {
+            name_path += *copy;
+            copy++;
         }
-    }else{
-        name_path+=" (readlink: Permission denied)";
+        stat(actual_path, &_stat);
+        info.inode = to_string(_stat.st_ino);
     }
+    else // no permission
+    {
+        name_path += " (readlink: Permission denied)";
+        info.inode = "";
+    }
+    get_file_type(info, actual_path);
 
     printf("%-9s %5d %10s %4s %9s %10s %s\n",
-            (info.cmd).c_str(),
-            info.pid,
-            (info.user).c_str(),
-            type.c_str(),
-            "TODO",
-            "TODO",
-            name_path.c_str());
+           (info.cmd).c_str(),
+           info.pid,
+           (info.user).c_str(),
+           fd.c_str(),
+           (info._type).c_str(),
+           (info.inode).c_str(),
+           name_path.c_str());
+    free(actual_path);
 }
 
-void print_header()
+void get_name_fromMaps(string line, string &name, pid_info_t &info, bool &over_head)
 {
-    printf("%-9s %5s %10s %4s %9s %10s %s\n",
-            "COMMAND",
-            "PID",
-            "USER",
-            "FD",
-            "TYPE",
-            "NODE",
-            "NAME");
+    stringstream ss(line);
+    string tmp[7];
+    int index = 0;
+    while (ss >> tmp[index++])
+    {
+    }
+    if (stoi(tmp[4]) > 0)
+    {
+        info.inode = tmp[4];
+        name = tmp[5];
+    }
+    if (!over_head && tmp[5] == "[heap]")
+    {
+        over_head = true;
+        name = NO_NODE;
+    }
+    info.fd = tmp[6] == "(deleted)" ? "DEL" : "mem";
 }
 
-void print_pidcontent(pid_t pid){
+void print_mem(pid_info_t info)
+{
+    string name_path(info.path);
+    name_path += "maps";
+    const char *actual_path = name_path.c_str();
+    ifstream maps(name_path);
+    if (!maps.is_open())
+    {
+        cerr << "permission deniled\n";
+        return;
+    }
+    string line;
+    vector<string> names;
+    string name = "";
+    bool over_head = false;
+
+    while (getline(maps, line))
+    {
+        get_name_fromMaps(line, name, info, over_head);
+        if (over_head && name != NO_NODE && find(names.begin(), names.end(), name) == names.end())
+        {
+            names.push_back(name);
+            printf("%-9s %5d %10s %4s %9s %10s %s\n",
+                   (info.cmd).c_str(),
+                   info.pid,
+                   (info.user).c_str(),
+                   info.fd.c_str(),
+                   "REG",
+                   info.inode.c_str(),
+                   name.c_str());
+        }
+    }
+}
+
+void print_pidcontent(pid_t pid)
+{
     pid_info_t info;
     struct stat _stat;
-    info.pid=pid;
-    snprintf(info.path, sizeof(info.path), "/proc/%d/", pid);
-    // cout<<info.path<<endl;
-    if(!stat(info.path,&_stat)){
-        info.user= get_username(_stat.st_uid);
+    snprintf(info.path, sizeof(info.path), "/proc/%d/", pid); // set info.path
+    if (!stat(info.path, &_stat))
+    {
+        info.pid = pid;
+        get_username_byPid(info, _stat.st_uid);
+        get_command_byPid(info, pid);
+        print_byFd(info, "cwd"); // FD=cwd
+        print_byFd(info, "rtd"); // FD=rtd
+        print_byFd(info, "txt"); // FD=txt
+        print_mem(info);
+        // print_mode();
+        // print_fd();
     }
-    info.cmd=get_process_name_by_pid(pid);
-    // cout<<info.cmd<<endl;
-    print_file(info,"cwd");
-    print_file(info,"rtd");
-
 }
 
-
-int main(){
+int main()
+{
     long int pid = 0;
-    char* endptr;
+    char *endptr;
     DIR *dir = opendir("/proc");
-    if (dir == NULL) {
-            cout<<"Couldn't open /proc\n";
-            return -1;
-        }
-    struct dirent* de;
+    if (dir == NULL)
+    {
+        cout << "Couldn't open /proc\n";
+        return -1;
+    }
+    struct dirent *de;
     print_header();
-    while ((de = readdir(dir))) {
-            if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
-                continue;
-            // Only inspect directories that are PID numbers
-            pid = strtol(de->d_name, &endptr, 10);
-            if (*endptr != '\0')
-                continue;
-            if(pid==1){
-                print_pidcontent(pid);
-            }
+    while ((de = readdir(dir)))
+    {
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+            continue;
+        // Only inspect directories that are PID numbers
+        pid = strtol(de->d_name, &endptr, 10);
+        if (*endptr != '\0')
+            continue;
+        if (pid == 1373)
+        {
+            print_pidcontent(pid);
         }
+    }
 
     return 0;
 }
