@@ -11,13 +11,63 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
-
+#include <regex>
 using namespace std;
 
 #define NO_NODE "NO_NODE"
 #define BUF_MAX 1024
-#define CMD_DISPLAY_MAX (90 + 1)
-#define USER_DISPLAY_MAX (100 + 1)
+
+vector<string> valid_type = {"REG", "CHR", "DIR", "FIFO", "SOCK", "unknown"};
+
+string cmd_filter = "";
+string file_filter = "";
+string type_filter = "";
+typedef struct result
+{
+    string cmd;
+    pid_t pid;
+    string user;
+    string fd;
+    string _type;
+    string inode;
+    string path;
+
+} result;
+
+vector<result> res;
+
+void push_res(string cmd, pid_t pid, string user, string fd, string _type, string inode, string path)
+{
+    result tmp;
+    tmp.cmd = cmd;
+    tmp.pid = pid;
+    tmp.user = user;
+    tmp.fd = fd;
+    tmp._type = _type;
+    tmp.inode = inode;
+    tmp.path = path;
+    res.push_back(tmp);
+}
+void print_res()
+{
+    std::regex cmd_reg("(" + cmd_filter + ")"), file_reg("(" + file_filter + ")"), type_reg("(" + type_filter + ")");
+    std::smatch file_match, type_match, cmd_match;
+    std::ssub_match sm;
+    for (auto &i : res)
+    {
+        if (regex_search(i.cmd, cmd_match, cmd_reg) && regex_search(i._type, type_match, type_reg) && regex_search(i.path, file_match, file_reg))
+        {
+            printf("%-9s %5d %10s %4s %9s %10s %s\n",
+                   (i.cmd).c_str(),
+                   i.pid,
+                   (i.user).c_str(),
+                   (i.fd).c_str(),
+                   (i._type).c_str(),
+                   (i.inode).c_str(),
+                   (i.path).c_str());
+        }
+    }
+}
 
 typedef struct pid_info_t
 {
@@ -214,7 +264,6 @@ void print_by_fd(pid_info_t info, string fd)
                 return;
             }
         }
-        // printf("sym-->%s\n", symbolic_path);
     }
     else // no permission
     {
@@ -222,15 +271,21 @@ void print_by_fd(pid_info_t info, string fd)
         info.inode = "";
         info._type = fd == "NOFD" ? "" : "unknown";
     }
-
-    printf("%-9s %5d %10s %4s %9s %10s %s\n",
-           (info.cmd).c_str(),
-           info.pid,
-           (info.user).c_str(),
-           info.fd.c_str(),
-           (info._type).c_str(),
-           (info.inode).c_str(),
-           name_path.c_str());
+    push_res(info.cmd,
+             info.pid,
+             info.user,
+             info.fd,
+             info._type,
+             info.inode,
+             name_path);
+    // printf("%-9s %5d %10s %4s %9s %10s %s\n",
+    //        (info.cmd).c_str(),
+    //        info.pid,
+    //        (info.user).c_str(),
+    //        info.fd.c_str(),
+    //        (info._type).c_str(),
+    //        (info.inode).c_str(),
+    //        name_path.c_str());
     free(actual_path);
 }
 
@@ -276,14 +331,21 @@ void print_mem(pid_info_t info)
         if (after_head && name != NO_NODE && find(names.begin(), names.end(), name) == names.end())
         {
             names.push_back(name);
-            printf("%-9s %5d %10s %4s %9s %10s %s\n",
-                   (info.cmd).c_str(),
-                   info.pid,
-                   (info.user).c_str(),
-                   info.fd.c_str(),
-                   "REG",
-                   info.inode.c_str(),
-                   name.c_str());
+            push_res(info.cmd,
+                     info.pid,
+                     info.user,
+                     info.fd,
+                     "REG",
+                     info.inode,
+                     name);
+            // printf("%-9s %5d %10s %4s %9s %10s %s\n",
+            //        (info.cmd).c_str(),
+            //        info.pid,
+            //        (info.user).c_str(),
+            //        info.fd.c_str(),
+            //        "REG",
+            //        info.inode.c_str(),
+            //        name.c_str());
         }
     }
 }
@@ -292,7 +354,6 @@ void print_fd(pid_info_t info)
 {
     const char *fd_path = "fd/";
     strncat(info.path, fd_path, sizeof(info.path));
-    // printf("-->%s\n",info.path);
     struct stat _stat;
     DIR *dir = opendir(info.path);
     if (dir == NULL)
@@ -339,7 +400,6 @@ void access_proc()
         return;
     }
     struct dirent *de;
-    print_header();
     while ((de = readdir(dir)))
     {
         if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
@@ -351,9 +411,48 @@ void access_proc()
         print_pid_content(pid);
     }
 }
-
-int main()
+bool process_argv(int args, char *argv[])
 {
+    cout << args << endl;
+    for (int i = 1; i < args; i++)
+    {
+        cout << i << ": " << argv[i] << endl;
+        if (i % 2 == 1)
+        {
+            if (argv[i][1] == 'c')
+            {
+                cmd_filter = string(argv[i + 1]);
+            }
+            else if (argv[i][1] == 't')
+            {
+                type_filter = string(argv[i + 1]);
+                if (find(valid_type.begin(), valid_type.end(), type_filter) == valid_type.end())
+                {
+                    cout << "Invalid TYPE option.\n";
+                    return false;
+                }
+            }
+            else if (argv[i][1] == 'f')
+            {
+                file_filter = string(argv[i + 1]);
+            }
+        }
+    }
+    return true;
+}
+
+int main(int args, char *argv[])
+{
+    if (!process_argv(args, argv))
+    {
+        return -1;
+    }
+    print_header();
     access_proc();
+    print_res();
+
+    // cout << "cmd_filter = " << cmd_filter << endl;
+    // cout << "type_filter = " << type_filter << endl;
+    // cout << "file_fil =  " << file_filter << endl;
     return 0;
 }
