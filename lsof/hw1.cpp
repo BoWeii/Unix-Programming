@@ -168,9 +168,6 @@ void get_file_type(pid_info_t &info, const char *file_path)
     stat(file_path, &_stat);
     switch (_stat.st_mode & S_IFMT)
     {
-    case S_IFBLK:
-        info._type = "BLK"; // block device
-        break;
     case S_IFCHR:
         info._type = "CHR"; // character device
         break;
@@ -179,9 +176,6 @@ void get_file_type(pid_info_t &info, const char *file_path)
         break;
     case S_IFIFO:
         info._type = "FIFO"; // fifo/pipe
-        break;
-    case S_IFLNK:
-        info._type = "SYM"; // symbolink
         break;
     case S_IFREG:
         info._type = "REG"; // regular file
@@ -192,6 +186,30 @@ void get_file_type(pid_info_t &info, const char *file_path)
     default:
         info._type = "unknown";
         break;
+    }
+}
+
+bool is_skip_deleted(char *actual_path, pid_info_t &info)
+{
+    // if symbolic link file is deleted, return false
+    struct stat _stat;
+    string type(actual_path);
+    string del = "(deleted)";
+    std::string::size_type i = type.find(del);
+    if (i != std::string::npos)
+    {
+        type.erase(i, del.length());
+        strcpy(actual_path, type.c_str());
+    }
+    if (!stat(actual_path, &_stat))
+    {
+        info.inode = to_string(_stat.st_ino);
+        get_file_type(info, actual_path);
+        return false;
+    }
+    else
+    {
+        return true;
     }
 }
 
@@ -233,6 +251,10 @@ void print_by_fd(pid_info_t info, string fd)
         }
         if (actual_path[0] == '/')
         {
+            if (is_skip_deleted(actual_path, info))
+            {
+                return;
+            }
             stat(actual_path, &_stat);
             info.inode = to_string(_stat.st_ino);
             get_file_type(info, actual_path);
@@ -261,7 +283,8 @@ void print_by_fd(pid_info_t info, string fd)
             }
             else
             {
-                return;
+                info.inode="";
+                info._type="unknown";
             }
         }
     }
@@ -278,18 +301,10 @@ void print_by_fd(pid_info_t info, string fd)
              info._type,
              info.inode,
              name_path);
-    // printf("%-9s %5d %10s %4s %9s %10s %s\n",
-    //        (info.cmd).c_str(),
-    //        info.pid,
-    //        (info.user).c_str(),
-    //        info.fd.c_str(),
-    //        (info._type).c_str(),
-    //        (info.inode).c_str(),
-    //        name_path.c_str());
     free(actual_path);
 }
 
-void get_name_fromMaps(string line, string &name, pid_info_t &info, bool &after_head)
+void get_name_fromMaps(string line, string &name, pid_info_t &info)
 {
     stringstream ss(line);
     string tmp[7];
@@ -302,9 +317,8 @@ void get_name_fromMaps(string line, string &name, pid_info_t &info, bool &after_
         info.inode = tmp[4];
         name = tmp[5];
     }
-    if (!after_head && tmp[5] == "[heap]")
+    else
     {
-        after_head = true;
         name = NO_NODE;
     }
     info.fd = tmp[6] == "(deleted)" ? "DEL" : "mem";
@@ -318,17 +332,18 @@ void print_mem(pid_info_t info)
     ifstream maps(name_path);
     if (!maps.is_open())
     {
+        cout << name_path << " could not opened\n";
         return;
     }
     string line;
     vector<string> names;
     string name = "";
-    bool after_head = false;
+    // bool after_head = false;
 
     while (getline(maps, line))
     {
-        get_name_fromMaps(line, name, info, after_head);
-        if (after_head && name != NO_NODE && find(names.begin(), names.end(), name) == names.end())
+        get_name_fromMaps(line, name, info);
+        if (name != NO_NODE && find(names.begin(), names.end(), name) == names.end())
         {
             names.push_back(name);
             push_res(info.cmd,
@@ -338,14 +353,6 @@ void print_mem(pid_info_t info)
                      "REG",
                      info.inode,
                      name);
-            // printf("%-9s %5d %10s %4s %9s %10s %s\n",
-            //        (info.cmd).c_str(),
-            //        info.pid,
-            //        (info.user).c_str(),
-            //        info.fd.c_str(),
-            //        "REG",
-            //        info.inode.c_str(),
-            //        name.c_str());
         }
     }
 }
@@ -408,15 +415,14 @@ void access_proc()
         if (*endptr != '\0')
             continue;
         // Only PID number can pass
+        // if (pid == 2900)
         print_pid_content(pid);
     }
 }
 bool process_argv(int args, char *argv[])
 {
-    cout << args << endl;
     for (int i = 1; i < args; i++)
     {
-        cout << i << ": " << argv[i] << endl;
         if (i % 2 == 1)
         {
             if (argv[i][1] == 'c')
@@ -441,6 +447,17 @@ bool process_argv(int args, char *argv[])
     return true;
 }
 
+void remove_redundant()
+{ // remove the first item in mem
+    for (auto i = res.begin(); i != res.end(); i++)
+    {
+        if (i->fd == "txt" && (i + 1)->fd == "mem" && i->path == (i + 1)->path)
+        {
+            res.erase(i + 1);
+        }
+    }
+}
+
 int main(int args, char *argv[])
 {
     if (!process_argv(args, argv))
@@ -449,10 +466,8 @@ int main(int args, char *argv[])
     }
     print_header();
     access_proc();
+    remove_redundant();
     print_res();
 
-    // cout << "cmd_filter = " << cmd_filter << endl;
-    // cout << "type_filter = " << type_filter << endl;
-    // cout << "file_fil =  " << file_filter << endl;
     return 0;
 }
