@@ -31,7 +31,6 @@ typedef struct result
     string _type;
     string inode;
     string path;
-
 } result;
 
 vector<result> res;
@@ -189,33 +188,24 @@ void get_file_type(pid_info_t &info, const char *file_path)
     }
 }
 
-bool is_skip_deleted(char *actual_path, pid_info_t &info)
+string get_remove_deleted_suffix(const char *symbolic_path, pid_info_t &info, char *actual_path)
 {
-    // if symbolic link file is deleted, return false
+    // if symbolic link file is deleted and not accessible, return true
     struct stat _stat;
     string type(actual_path);
-    string del = "(deleted)";
+    string del = " (deleted)";
     std::string::size_type i = type.find(del);
-    if (i != std::string::npos)
+    if (i != std::string::npos) // contain ("deleted")
     {
         type.erase(i, del.length());
         strcpy(actual_path, type.c_str());
     }
-    if (!stat(actual_path, &_stat))
-    {
-        info.inode = to_string(_stat.st_ino);
-        get_file_type(info, actual_path);
-        return false;
-    }
-    else
-    {
-        return true;
-    }
+    return type;
 }
 
 void print_by_fd(pid_info_t info, string fd)
 {
-    string name_path(info.path);
+    string name_path(info.path), output_path;
     struct stat _stat;
     info.fd = fd;
     if (fd == "cwd")
@@ -235,29 +225,27 @@ void print_by_fd(pid_info_t info, string fd)
     }
     else
     {
-        name_path += fd;
+        name_path += ("/"+fd);
         get_file_permission(info, name_path.c_str());
     }
     const char *symbolic_path = name_path.c_str();
     char *actual_path = (char *)calloc(1024, sizeof(char));
+    output_path = name_path;
     if (readlink(symbolic_path, actual_path, 1024) != -1) // has permission
     {
-        name_path = "";
+        output_path = "";
         char *copy = actual_path;
         while (*copy)
         {
-            name_path += *copy;
+            output_path += *copy;
             copy++;
         }
         if (actual_path[0] == '/')
         {
-            if (is_skip_deleted(actual_path, info))
-            {
-                return;
-            }
-            stat(actual_path, &_stat);
+            output_path = get_remove_deleted_suffix(symbolic_path, info, actual_path);
+            stat(symbolic_path, &_stat);
             info.inode = to_string(_stat.st_ino);
-            get_file_type(info, actual_path);
+            get_file_type(info, symbolic_path);
         }
         else
         {
@@ -282,15 +270,17 @@ void print_by_fd(pid_info_t info, string fd)
                 info._type = "FIFO";
             }
             else
-            {
-                info.inode="";
-                info._type="unknown";
+            {   //deleted file setting
+                info.inode = "";
+                stat(symbolic_path, &_stat);
+                info.inode = to_string(_stat.st_ino);
+                info._type = "unknown";
             }
         }
     }
     else // no permission
     {
-        name_path += " (Permission denied)";
+        output_path += " (Permission denied)";
         info.inode = "";
         info._type = fd == "NOFD" ? "" : "unknown";
     }
@@ -300,7 +290,7 @@ void print_by_fd(pid_info_t info, string fd)
              info.fd,
              info._type,
              info.inode,
-             name_path);
+             output_path);
     free(actual_path);
 }
 
@@ -332,13 +322,11 @@ void print_mem(pid_info_t info)
     ifstream maps(name_path);
     if (!maps.is_open())
     {
-        cout << name_path << " could not opened\n";
         return;
     }
     string line;
     vector<string> names;
     string name = "";
-    // bool after_head = false;
 
     while (getline(maps, line))
     {
@@ -359,7 +347,7 @@ void print_mem(pid_info_t info)
 
 void print_fd(pid_info_t info)
 {
-    const char *fd_path = "fd/";
+    const char *fd_path = "fd";
     strncat(info.path, fd_path, sizeof(info.path));
     struct stat _stat;
     DIR *dir = opendir(info.path);
@@ -403,7 +391,6 @@ void access_proc()
     DIR *dir = opendir("/proc");
     if (dir == NULL)
     {
-        cout << "Couldn't open /proc\n";
         return;
     }
     struct dirent *de;
