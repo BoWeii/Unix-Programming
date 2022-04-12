@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             else
             READY_TO_RECEIVE_CMD="YES"
-            CMD+="$1"
+            CMD+="$1 "
             fi
             shift
             ;;
@@ -63,5 +63,7 @@ fi
 
 
 export LD_PRELOAD=${LOGGER_SO_PATH}
-eval "$CMD" 2> ${OUTPUT_TO_FILE}
+export OUTPUT_TO_FILE=${OUTPUT_TO_FILE}
+eval "$CMD"
 export LD_PRELOAD=""
+export OUTPUT_TO_FILE=""
