@@ -11,18 +11,9 @@ using namespace std;
 #define BUFFER_MAX_SIZE 256
 char current_path[BUFFER_MAX_SIZE];
 
-// void redirect_stderr(const char *fname)
-// {
-//     int newstderr = open(fname, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-//     dup2(newstderr, STDERR_FILENO);
-//     close(newstderr);
-//     return;
-// }
-
-int main(int argc, char *argv[])
+int main(int argc, char *argv[], char *envp[])
 {
     getcwd(current_path, BUFFER_MAX_SIZE);
-    // cout << "pwd= " << current_path << endl;
     char USAGE[] = "usage: ./%s [-o file] [-p sopath] [--] cmd [cmd args ...] \n\
         -p: set the path to logger.so, default = ./logger.so \n\
         -o: print output to file, print to \"stderr\" if no file specified\n\
@@ -33,10 +24,10 @@ int main(int argc, char *argv[])
     char output_fd[10] = {'\0'};
     bool ready_to_recv_cmd = false;
 
-    char cmd[9999] = {'\0'};
+    char cmd[99] = {'\0'};
     char cmd_ld_preload[] = "LD_PRELOAD=%s";
     char cmd_ld_preload_cancel[] = "LD_PRELOAD=";
-    char cmd_send_fd[] = "OUTPUT_FD=%s";
+
     const char *cmd_cat = "%s %s";
 
     const char *opt_sring = "p:o:-:";
@@ -66,7 +57,13 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    printf("%s/%s: invalid option -- '%c'\n", current_path, logger, argv[cur_argc][1]);
+                    printf("%s/%s: invalid option -- '", current_path, logger);
+                    int x = 1;
+                    while (argv[cur_argc][x])
+                    {
+                        printf("%c", argv[cur_argc][x++]);
+                    }
+                    printf("'\n");
                     printf(USAGE, logger);
                     return 0;
                 }
@@ -89,16 +86,24 @@ int main(int argc, char *argv[])
 
     if (argc > cur_argc) // ready to execute the cmd
     {
-        sprintf(cmd, cmd_ld_preload, logger_so_path); // LD_PRELOAD=
-        sprintf(cmd_send_fd, cmd_send_fd, output_fd);
-        sprintf(cmd, cmd_cat, cmd, cmd_send_fd); // OUTPUT_FD=
-        for (; cur_argc < argc; cur_argc++)
-        {
-            sprintf(cmd, cmd_cat, cmd, argv[cur_argc]);
-        }
+        char *cmd_ld_preload = (char *)calloc(100, sizeof(char));
+        sprintf(cmd_ld_preload, "LD_PRELOAD=%s", logger_so_path);
 
-        system(cmd);
-        system(cmd_ld_preload_cancel);
+        char *cmd_send_fd = (char *)calloc(50, sizeof(char));
+        sprintf(cmd_send_fd, "OUTPUT_FD=%s", output_fd);
+
+        int envp_size = 0;
+        char **envp_ptr=envp;
+        while (*envp_ptr++)
+        {
+            envp_size++;
+        }
+        char *envp2[envp_size+2];
+        memcpy( envp2, envp, (envp_size) * sizeof(char *) );
+        envp2[envp_size++]=cmd_ld_preload;
+        envp2[envp_size++]=cmd_send_fd;
+        envp2[envp_size]=NULL;
+        execvpe(argv[cur_argc], argv + cur_argc, envp2);
     }
     else
     {
