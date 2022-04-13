@@ -104,6 +104,8 @@ int main(int argc, char *argv[], char *envp[])
         envp2[envp_size++]=cmd_send_fd;
         envp2[envp_size]=NULL;
         execvpe(argv[cur_argc], argv + cur_argc, envp2);
+        free(cmd_ld_preload);
+        free(cmd_send_fd);
     }
     else
     {
