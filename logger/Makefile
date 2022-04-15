@@ -1,4 +1,4 @@
-CFLAG = -shared -fPIC -Wincompatible-pointer-types
+CFLAG = -shared -fPIC -Wincompatible-pointer-types -Wall
 C = gcc
 CXX = g++
 HW = hw2
@@ -13,4 +13,4 @@ $(LOGGER): $(LOGGER:=.cpp)
 	$(CXX) -o $@ $^ 
 
 clean:
-	$(RM) $(HW:=.so) $(TEST)
+	$(RM) $(HW:=.so) $(LOGGER)

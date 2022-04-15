@@ -13,7 +13,6 @@ char current_path[BUFFER_MAX_SIZE];
 
 int main(int argc, char *argv[], char *envp[])
 {
-    // getcwd(current_path, BUFFER_MAX_SIZE);
     char USAGE[] = "usage: ./%s [-o file] [-p sopath] [--] cmd [cmd args ...] \n\
         -p: set the path to logger.so, default = ./logger.so \n\
         -o: print output to file, print to \"stderr\" if no file specified\n\
@@ -72,6 +71,7 @@ int main(int argc, char *argv[], char *envp[])
         envp2[envp_size++] = cmd_ld_preload;
         envp2[envp_size++] = cmd_send_fd;
         envp2[envp_size] = NULL;
+
         execvpe(argv[optind], argv + optind, envp2);
 
         free(cmd_ld_preload);

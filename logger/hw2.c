@@ -26,102 +26,40 @@ void redirect_logger()
         return;
     }
     target_fd = atoi(getenv("OUTPUT_FD"));
-    // printf("In init targer fd=%d\n",target_fd);
     init = 1;
-    // dup2(target, STDERR_FILENO);
-    // close(target);
-    // setenv("LD_PRELOAD", so, 1);
     return;
 }
 
-void print_path_args(const char *arg, int last)
+void set_realpath(const char *src, char *dst)
 {
-    char path[BUFFER_MAX_SIZE] = {0};
-    if (realpath(arg, path) != NULL)
+    // char path[BUFFER_MAX_SIZE] = {0};
+    if (realpath(src, dst) == NULL)
     {
-        dprintf(target_fd, "\"%s\"", path);
-    }
-    else
-    {
-
-        dprintf(target_fd, "\"string untouched errno=%d\"", errno);
-    }
-    if (!last)
-    {
-        dprintf(target_fd, ", ");
+        strcpy(dst, "string untouched");
     }
     return;
 }
-void print_fd_args(const char *arg, int last)
-{
-}
-void print_oct_args(unsigned int arg, int last)
-{
-    dprintf(target_fd, "%o", arg);
-    if (!last)
-    {
-        dprintf(target_fd, ", ");
-    }
-}
 
-void print_dec_args(unsigned int arg, int last)
-{
-    dprintf(target_fd, "%d", arg);
-    if (!last)
-    {
-        dprintf(target_fd, ", ");
-    }
-}
-
-void print_str_args(const char *arg, int last)
+void set_str32(const char *src, char *dst)
 {
     int count = 0; // If a passed argument is a regular character buffer, print it out up to 32 bytes.
-    dprintf(target_fd, "\"");
-    while (*arg && count < 32)
+    while (*src && count < 32)
     {
-
-        if (isprint(*arg))
-        {
-            dprintf(target_fd, "%c", *arg);
-        }
-        else
-        {
-            dprintf(target_fd, ".");
-        }
-        arg++;
+        dst[count] = isprint(*src) ? *src : '.';
+        src++;
         count++;
-    }
-
-    dprintf(target_fd, "\"");
-    if (!last)
-    {
-        dprintf(target_fd, ", ");
     }
 }
 
-void print_fd(int fd, int last)
+void set_fd_path(int fd, char *actual_path)
 {
     char *proc_fd = (char *)calloc(1024, sizeof(char));
-    char *actual_path = (char *)calloc(1024, sizeof(char));
     sprintf(proc_fd, "/proc/self/fd/%d", fd);
-    // pid_t pid = getpid();
-    // char *proc_fd = (char *)calloc(1024, sizeof(char));
-    // char *actual_path = (char *)calloc(1024, sizeof(char));
-    // sprintf(proc_fd, "/proc/%d/fd/%d", pid,fd);
-    if (readlink(proc_fd, actual_path, 1024) != -1)
+    if (readlink(proc_fd, actual_path, 1024) == -1)
     {
-        dprintf(target_fd, "\"%s\"", actual_path);
-    }
-    else
-    {
-        dprintf(target_fd, "%s", "@@@@@@@@@@@@@@@@@@@@@@@@@@");
-    }
-    if (!last)
-    {
-        dprintf(target_fd, ", ");
+        strcpy(actual_path, "@@@@@@@@@@@@@@@@@@@@@@@@@@");
     }
     free(proc_fd);
-    free(actual_path);
     return;
 }
 
@@ -137,10 +75,11 @@ int chmod(const char *pathname, mode_t mode)
     if (ori_chmod == NULL)
         fprintf(stderr, "fail to call chmod \n");
     int ret = ori_chmod(pathname, mode);
-    dprintf(target_fd, "[logger] %s", "chmod(");
-    print_path_args(pathname, 0);
-    print_oct_args(mode, 1);
-    dprintf(target_fd, ") = %d\n", ret);
+
+    char dst[BUFFER_MAX_SIZE] = {0};
+    set_realpath(pathname, dst);
+
+    dprintf(target_fd, "[logger] chmod(\"%s\", \"%o\") = %d \n", dst, mode, ret);
     return ret;
 }
 
@@ -153,11 +92,11 @@ int chown(const char *pathname, uid_t owner, gid_t group)
     if (ori_chown == NULL)
         fprintf(stderr, "fail to call chown \n");
     int ret = ori_chown(pathname, owner, group);
-    dprintf(target_fd, "[logger] %s", "chown(");
-    print_path_args(pathname, 0);
-    print_dec_args(owner, 0);
-    print_dec_args(group, 1);
-    dprintf(target_fd, ") = %d\n", ret);
+
+    char dst[BUFFER_MAX_SIZE] = {0};
+    set_realpath(pathname, dst);
+
+    dprintf(target_fd, "[logger] chown(\"%s\", \"%d\", \"%d\") = %d \n", dst, owner, group, ret);
     return ret;
 }
 
@@ -170,10 +109,11 @@ int close(int fd)
     if (ori_close == NULL)
         fprintf(stderr, "fail to call close \n");
 
-    dprintf(target_fd, "[logger] %s", "close(");
-    print_fd(fd, 1);
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_fd_path(fd, actual_path);
+
+    dprintf(target_fd, "[logger] close(\"%s\") = %d \n", actual_path, 0);
     int ret = ori_close(fd);
-    dprintf(target_fd, ") = %d\n", 0);
     return ret;
 }
 static int (*ori_creat)(const char *, mode_t) = NULL;
@@ -186,11 +126,10 @@ int creat(const char *path, mode_t mode)
         fprintf(stderr, "fail to call creat \n");
     int ret = ori_creat(path, mode);
 
-    dprintf(target_fd, "[logger] %s", "creat(");
-    print_path_args(path, 0);
-    print_oct_args(mode, 1);
-    dprintf(target_fd, ") = %d\n", ret);
+    char dst[BUFFER_MAX_SIZE] = {0};
+    set_realpath(path, dst);
 
+    dprintf(target_fd, "[logger] creat(\"%s\", \"%o\") = %d \n", dst, mode, ret);
     return ret;
 }
 
@@ -202,11 +141,12 @@ int fclose(FILE *stream)
     ori_fclose = dlsym(handle, "fclose");
     if (ori_fclose == NULL)
         fprintf(stderr, "fail to call fclose \n");
-    dprintf(target_fd, "[logger] %s", "fclose(");
-    print_fd(stream->_fileno, 1);
-    dprintf(target_fd, ") = %d\n", 0);
-    int ret = ori_fclose(stream);
 
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_fd_path(stream->_fileno, actual_path);
+
+    dprintf(target_fd, "[logger] fclose(\"%s\") = %d \n", actual_path, 0);
+    int ret = ori_fclose(stream);
     return ret;
 }
 
@@ -220,11 +160,12 @@ FILE *fopen(const char *pathname, const char *mode)
         fprintf(stderr, "fail to call fopen \n");
     FILE *ret = ori_fopen(pathname, mode);
 
-    dprintf(target_fd, "[logger] %s", "fopen(");
-    print_path_args(pathname, 0);
-    print_str_args(mode, 1);
-    dprintf(target_fd, ") = %p\n", ret);
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_realpath(pathname, actual_path);
+    char str[BUFFER_MAX_SIZE] = {0};
+    set_str32(mode, str);
 
+    dprintf(target_fd, "[logger] fopen(\"%s\", \"%s\") = %p \n", actual_path, str, ret);
     return ret;
 }
 
@@ -237,13 +178,13 @@ size_t fread(void *restrict ptr, size_t size, size_t nmemb, FILE *restrict strea
     if (ori_fread == NULL)
         fprintf(stderr, "fail to call fread \n");
     size_t ret = ori_fread(ptr, size, nmemb, stream);
-    dprintf(target_fd, "[logger] %s", "fread(");
-    print_str_args(ptr, 0);
-    print_dec_args(size, 0);
-    print_dec_args(nmemb, 0);
-    print_fd(stream->_fileno, 1);
-    dprintf(target_fd, ") = %ld\n", ret);
 
+    char str[BUFFER_MAX_SIZE] = {0};
+    set_str32(ptr, str);
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_fd_path(stream->_fileno, actual_path);
+
+    dprintf(target_fd, "[logger] fread(\"%s\", \"%ld\", \"%ld\", \"%s\") = %ld \n", str, size, nmemb, actual_path, ret);
     return ret;
 }
 
@@ -256,13 +197,13 @@ size_t fwrite(const void *restrict ptr, size_t size, size_t nmemb, FILE *restric
     if (ori_fwrite == NULL)
         fprintf(stderr, "fail to call fwrite \n");
     size_t ret = ori_fwrite(ptr, size, nmemb, stream);
-    dprintf(target_fd, "[logger] %s", "fwrite(");
-    print_str_args(ptr, 0);
-    print_dec_args(size, 0);
-    print_dec_args(nmemb, 0);
-    print_fd(stream->_fileno, 1);
-    dprintf(target_fd, ") = %ld\n", ret);
 
+    char str[BUFFER_MAX_SIZE] = {0};
+    set_str32(ptr, str);
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_fd_path(stream->_fileno, actual_path);
+
+    dprintf(target_fd, "[logger] fwrite(\"%s\", \"%ld\", \"%ld\", \"%s\") = %ld \n", str, size, nmemb, actual_path, ret);
     return ret;
 }
 
@@ -275,12 +216,11 @@ int open(const char *pathname, int flags, mode_t mode)
     if (ori_open == NULL)
         fprintf(stderr, "fail to call open \n");
     int ret = ori_open(pathname, flags, mode);
-    dprintf(target_fd, "[logger] %s", "open(");
-    print_path_args(pathname, 0);
-    print_oct_args(flags, 0);
-    print_oct_args(mode, 1);
-    dprintf(target_fd, ") = %d\n", ret);
 
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_realpath(pathname, actual_path);
+
+    dprintf(target_fd, "[logger] open(\"%s\", \"%o\", \"%o\") = %d \n", actual_path, flags, mode, ret);
     return ret;
 }
 static ssize_t (*ori_read)(int, void *, size_t) = NULL;
@@ -292,11 +232,13 @@ ssize_t read(int fd, void *buf, size_t count)
     if (ori_read == NULL)
         fprintf(stderr, "fail to call read \n");
     int ret = ori_read(fd, buf, count);
-    dprintf(target_fd, "[logger] %s", "read(");
-    print_fd(fd, 0);
-    print_str_args(buf, 0);
-    print_dec_args(count, 1);
-    dprintf(target_fd, ") = %d\n", ret);
+
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_fd_path(fd, actual_path);
+    char str[BUFFER_MAX_SIZE] = {0};
+    set_str32(buf, str);
+
+    dprintf(target_fd, "[logger] read(\"%s\", \"%s\", \"%ld\") = %d \n", actual_path, str, count, ret);
     return ret;
 }
 static int (*ori_remove)(const char *) = NULL;
@@ -307,10 +249,12 @@ int remove(const char *path)
     ori_remove = dlsym(handle, "remove");
     if (ori_remove == NULL)
         fprintf(stderr, "fail to call remove \n");
-    dprintf(target_fd, "[logger] %s", "remove(");
-    print_path_args(path, 1);
+
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_realpath(path, actual_path);
+    
+    dprintf(target_fd, "[logger] remove(\"%s\") = %d \n", actual_path, 0);
     int ret = ori_remove(path);
-    dprintf(target_fd, ") = %d\n", ret);
     return ret;
 }
 
@@ -324,10 +268,7 @@ int rename(const char *oldpath, const char *newpath)
         fprintf(stderr, "fail to call rename \n");
     int ret = ori_rename(oldpath, newpath);
 
-    dprintf(target_fd, "[logger] %s", "rename(");
-    print_str_args(oldpath, 0);
-    print_str_args(newpath, 1);
-    dprintf(target_fd, ") = %d\n", ret);
+    dprintf(target_fd, "[logger] rename(\"%s\", \"%s\") = %d \n", oldpath, newpath, ret);
     return ret;
 }
 
@@ -341,8 +282,7 @@ FILE *tmpfile(void)
         fprintf(stderr, "fail to call tmpfile \n");
     FILE *ret = ori_tmpfile();
 
-    dprintf(target_fd, "[logger] %s", "tmpfile(");
-    dprintf(target_fd, ") = %p\n", ret);
+    dprintf(target_fd, "[logger] tmpfile() = %p \n", ret);
     return ret;
 }
 
@@ -355,10 +295,12 @@ ssize_t write(int fd, const void *buf, size_t count)
     if (ori_write == NULL)
         fprintf(stderr, "fail to call write \n");
     int ret = ori_write(fd, buf, count);
-    dprintf(target_fd, "[logger] %s", "write(");
-    print_fd(fd, 0);
-    print_str_args(buf, 0);
-    print_dec_args(count, 1);
-    dprintf(target_fd, ") = %d\n", ret);
+
+    char actual_path[BUFFER_MAX_SIZE] = {0};
+    set_fd_path(fd, actual_path);
+    char str[BUFFER_MAX_SIZE] = {0};
+    set_str32(buf, str);
+
+    dprintf(target_fd, "[logger] write(\"%s\", \"%s\", \"%ld\") = %d \n", actual_path, str, count, ret);
     return ret;
 }
