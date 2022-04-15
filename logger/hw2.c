@@ -201,7 +201,7 @@ int fclose(FILE *stream)
     void *handle = dlopen("libc.so.6", RTLD_LAZY);
     ori_fclose = dlsym(handle, "fclose");
     if (ori_fclose == NULL)
-        fprintf(stderr, "fail to call fopen \n");
+        fprintf(stderr, "fail to call fclose \n");
     dprintf(target_fd, "[logger] %s", "fclose(");
     print_fd(stream->_fileno, 1);
     dprintf(target_fd, ") = %d\n", 0);
