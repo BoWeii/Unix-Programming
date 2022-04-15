@@ -11,7 +11,6 @@
 #include <errno.h>
 
 #define BUFFER_MAX_SIZE 128
-// int __dup_stderr = dup(STDERR_FILENO);
 
 #define STDERR_FD 2
 #define O_WRONLY 01
@@ -32,7 +31,6 @@ void redirect_logger()
 
 void set_realpath(const char *src, char *dst)
 {
-    // char path[BUFFER_MAX_SIZE] = {0};
     if (realpath(src, dst) == NULL)
     {
         strcpy(dst, "string untouched");
@@ -57,7 +55,7 @@ void set_fd_path(int fd, char *actual_path)
     sprintf(proc_fd, "/proc/self/fd/%d", fd);
     if (readlink(proc_fd, actual_path, 1024) == -1)
     {
-        strcpy(actual_path, "@@@@@@@@@@@@@@@@@@@@@@@@@@");
+        strcpy(actual_path, "");
     }
     free(proc_fd);
     return;
@@ -111,9 +109,8 @@ int close(int fd)
 
     char actual_path[BUFFER_MAX_SIZE] = {0};
     set_fd_path(fd, actual_path);
-
-    dprintf(target_fd, "[logger] close(\"%s\") = %d \n", actual_path, 0);
     int ret = ori_close(fd);
+    dprintf(target_fd, "[logger] close(\"%s\") = %d \n", actual_path, ret);
     return ret;
 }
 static int (*ori_creat)(const char *, mode_t) = NULL;
@@ -145,8 +142,8 @@ int fclose(FILE *stream)
     char actual_path[BUFFER_MAX_SIZE] = {0};
     set_fd_path(stream->_fileno, actual_path);
 
-    dprintf(target_fd, "[logger] fclose(\"%s\") = %d \n", actual_path, 0);
     int ret = ori_fclose(stream);
+    dprintf(target_fd, "[logger] fclose(\"%s\") = %d \n", actual_path, ret);
     return ret;
 }
 
@@ -253,8 +250,8 @@ int remove(const char *path)
     char actual_path[BUFFER_MAX_SIZE] = {0};
     set_realpath(path, actual_path);
     
-    dprintf(target_fd, "[logger] remove(\"%s\") = %d \n", actual_path, 0);
     int ret = ori_remove(path);
+    dprintf(target_fd, "[logger] remove(\"%s\") = %d \n", actual_path, ret);
     return ret;
 }
 
