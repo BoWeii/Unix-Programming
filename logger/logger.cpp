@@ -47,13 +47,20 @@ int main(int argc, char *argv[], char *envp[])
 
     if (argc > optind) // ready to execute the cmd
     {
-        int file = open(output_to_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-        if (file == -1)
+        int file_fd = 0;
+        if (strcmp(output_to_file, "/dev/stderr") == 0)
         {
-            file = creat(output_to_file, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            file_fd = dup(2);
         }
-        int _fd = strcmp(output_to_file, "/dev/stderr") == 0 ? 2 : file;
-        strcpy(output_fd, to_string(_fd).c_str());
+        else
+        {
+            file_fd = open(output_to_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH | O_TRUNC);
+            if (file_fd == -1)
+            {
+                file_fd = creat(output_to_file, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            }
+        }
+        strcpy(output_fd, to_string(file_fd).c_str());
         char *cmd_ld_preload = (char *)calloc(100, sizeof(char));
         sprintf(cmd_ld_preload, "LD_PRELOAD=%s", logger_so_path);
 

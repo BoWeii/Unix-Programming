@@ -6,8 +6,10 @@
 #include <stdarg.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <ctype.h>
 #include <string.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #define BUFFER_MAX_SIZE 128
@@ -28,6 +30,7 @@ void redirect_logger()
     init = 1;
     return;
 }
+
 
 void set_realpath(const char *src, char *dst)
 {
@@ -77,7 +80,7 @@ int chmod(const char *pathname, mode_t mode)
     char dst[BUFFER_MAX_SIZE] = {0};
     set_realpath(pathname, dst);
 
-    dprintf(target_fd, "[logger] chmod(\"%s\", \"%o\") = %d \n", dst, mode, ret);
+    dprintf(target_fd, "[logger] chmod(\"%s\", %o) = %d \n", dst, mode, ret);
     return ret;
 }
 
@@ -94,7 +97,7 @@ int chown(const char *pathname, uid_t owner, gid_t group)
     char dst[BUFFER_MAX_SIZE] = {0};
     set_realpath(pathname, dst);
 
-    dprintf(target_fd, "[logger] chown(\"%s\", \"%d\", \"%d\") = %d \n", dst, owner, group, ret);
+    dprintf(target_fd, "[logger] chown(\"%s\", %d, %d) = %d \n", dst, owner, group, ret);
     return ret;
 }
 
@@ -126,7 +129,7 @@ int creat(const char *path, mode_t mode)
     char dst[BUFFER_MAX_SIZE] = {0};
     set_realpath(path, dst);
 
-    dprintf(target_fd, "[logger] creat(\"%s\", \"%o\") = %d \n", dst, mode, ret);
+    dprintf(target_fd, "[logger] creat(\"%s\", %o) = %d \n", dst, mode, ret);
     return ret;
 }
 
@@ -181,7 +184,7 @@ size_t fread(void *restrict ptr, size_t size, size_t nmemb, FILE *restrict strea
     char actual_path[BUFFER_MAX_SIZE] = {0};
     set_fd_path(stream->_fileno, actual_path);
 
-    dprintf(target_fd, "[logger] fread(\"%s\", \"%ld\", \"%ld\", \"%s\") = %ld \n", str, size, nmemb, actual_path, ret);
+    dprintf(target_fd, "[logger] fread(\"%s\", %ld, %ld, \"%s\") = %ld \n", str, size, nmemb, actual_path, ret);
     return ret;
 }
 
@@ -200,24 +203,33 @@ size_t fwrite(const void *restrict ptr, size_t size, size_t nmemb, FILE *restric
     char actual_path[BUFFER_MAX_SIZE] = {0};
     set_fd_path(stream->_fileno, actual_path);
 
-    dprintf(target_fd, "[logger] fwrite(\"%s\", \"%ld\", \"%ld\", \"%s\") = %ld \n", str, size, nmemb, actual_path, ret);
+    dprintf(target_fd, "[logger] fwrite(\"%s\", %ld, %ld, \"%s\") = %ld \n", str, size, nmemb, actual_path, ret);
     return ret;
 }
 
 static int (*ori_open)(const char *, int, mode_t) = NULL;
-int open(const char *pathname, int flags, mode_t mode)
+int open(const char *pathname, int flags, ...)
 {
     redirect_logger();
     void *handle = dlopen("libc.so.6", RTLD_LAZY);
     ori_open = dlsym(handle, "open");
     if (ori_open == NULL)
         fprintf(stderr, "fail to call open \n");
-    int ret = ori_open(pathname, flags, mode);
+
+    int mode_output=0;
+    if (__OPEN_NEEDS_MODE (flags))
+    {
+      va_list arg;
+      va_start(arg, flags);
+      mode_output = va_arg(arg, int);
+      va_end(arg);
+    }
 
     char actual_path[BUFFER_MAX_SIZE] = {0};
     set_realpath(pathname, actual_path);
-
-    dprintf(target_fd, "[logger] open(\"%s\", \"%o\", \"%o\") = %d \n", actual_path, flags, mode, ret);
+    
+    int ret = ori_open(pathname, flags, mode_output);
+    dprintf(target_fd, "[logger] open(\"%s\", %o, %o) = %d \n", actual_path, flags, mode_output, ret);
     return ret;
 }
 static ssize_t (*ori_read)(int, void *, size_t) = NULL;
@@ -235,7 +247,7 @@ ssize_t read(int fd, void *buf, size_t count)
     char str[BUFFER_MAX_SIZE] = {0};
     set_str32(buf, str);
 
-    dprintf(target_fd, "[logger] read(\"%s\", \"%s\", \"%ld\") = %d \n", actual_path, str, count, ret);
+    dprintf(target_fd, "[logger] read(\"%s\", \"%s\", %ld) = %d \n", actual_path, str, count, ret);
     return ret;
 }
 static int (*ori_remove)(const char *) = NULL;
@@ -298,6 +310,6 @@ ssize_t write(int fd, const void *buf, size_t count)
     char str[BUFFER_MAX_SIZE] = {0};
     set_str32(buf, str);
 
-    dprintf(target_fd, "[logger] write(\"%s\", \"%s\", \"%ld\") = %d \n", actual_path, str, count, ret);
+    dprintf(target_fd, "[logger] write(\"%s\", \"%s\", %ld) = %d \n", actual_path, str, count, ret);
     return ret;
 }
