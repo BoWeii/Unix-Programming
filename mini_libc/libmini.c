@@ -267,8 +267,16 @@ int sigismember(const sigset_t *set, int sig)
     if (set == NULL || sig <= 0 || sig >= NSIG)
         return -1;
     unsigned long _sig = sig - 1;
-    // return (set->val[0] & ((1UL) << (_sig - 1))) != 0;
     return 1 & (set->val[0] >> _sig);
+}
+int sigfillset(sigset_t *set)
+{
+    if (set == NULL)
+    {
+        return -1;
+    }
+    set->val[0] = -1; // signed-to-unsigned conversion say that the value is reduced modulo UINT_MAX + 1
+    return 0;
 }
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
