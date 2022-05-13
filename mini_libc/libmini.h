@@ -129,7 +129,8 @@ extern long errno;
 #define SIGIO 29
 #define SIGPOLL SIGIO
 #define SIGPWR 30
-#define NSIG 31
+#define SIGSYS 31
+#define NSIG 32
 
 /* from /usr/include/x86_64-linux-gnu/bits/sigaction.h */
 #define SA_NOCLDSTOP 1          /* Don't send SIGCHLD when children stop.  */
