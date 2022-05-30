@@ -8,8 +8,26 @@ typedef enum
 {
     not_load,
     loaded,
-    running
+    running,
+    terminated,
 } sdb_state;
+
+typedef enum
+{
+    vm_region,
+    vm_flags,
+    vm_pgoff,
+    vm_dev,
+    vm_node,
+    vm_path,
+} vmmap_list;
+
+typedef struct break_point
+{
+    unsigned long long int addr;
+    int id;
+    unsigned char orig_content;
+} break_point;
 
 using namespace std;
 
